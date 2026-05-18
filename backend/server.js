@@ -37,52 +37,63 @@ app.use('/api/transactions', transactionRoutes);
 app.use('/api/notifications', notificationRoutes);
 
 app.get('/', (req, res) => {
-  res.json({ message: 'BlockPay Backend Running', status: 'ok' });
+    res.json({ message: 'BlockPay Backend Running', status: 'ok' });
 });
 
 // Debug endpoint — open http://127.0.0.1:5000/debug in browser
 app.get('/debug', async (req, res) => {
-  const User = require('./models/User');
-  const info = {
-    mongoState: ['disconnected', 'connected', 'connecting', 'disconnecting'][mongoose.connection.readyState],
-    mongoURI: process.env.MONGO_URI ? '✅ Set (' + process.env.MONGO_URI.substring(0, 30) + '...)' : '❌ NOT SET',
-    jwtSecret: process.env.JWT_SECRET ? '✅ Set' : '❌ NOT SET',
-    socketIO: '✅ Active',
-  };
+    const User = require('./models/User');
+    const info = {
+        mongoState: ['disconnected', 'connected', 'connecting', 'disconnecting'][mongoose.connection.readyState],
+        mongoURI: process.env.MONGO_URI ? '✅ Set' : '❌ NOT SET',
+        jwtSecret: process.env.JWT_SECRET ? '✅ Set' : '❌ NOT SET',
+        encryptionSecret: process.env.ENCRYPTION_SECRET ? '✅ Set' : '❌ NOT SET',
+        adminKey: process.env.ADMIN_PRIVATE_KEY ? '✅ Set' : '❌ NOT SET',
+        rpcUrl: process.env.RPC_URL || 'Using default',
+        socketIO: '✅ Active',
+    };
 
-  // Try a test DB operation
-  if (mongoose.connection.readyState === 1) {
-    try {
-      const count = await User.countDocuments();
-      info.dbTest = '✅ DB works, user count: ' + count;
-    } catch (err) {
-      info.dbTest = '❌ DB query failed: ' + err.message;
+    // Try a test DB operation
+    if (mongoose.connection.readyState === 1) {
+        try {
+            const count = await User.countDocuments();
+            info.dbTest = '✅ DB works, user count: ' + count;
+        } catch (err) {
+            info.dbTest = '❌ DB query failed: ' + err.message;
+        }
+    } else {
+        info.dbTest = '❌ Not connected to MongoDB';
     }
-  } else {
-    info.dbTest = '❌ Not connected to MongoDB';
-  }
 
-  res.json(info);
+    res.json(info);
 });
+
+// Validate required env vars on startup
+const requiredVars = ['MONGO_URI', 'JWT_SECRET', 'ENCRYPTION_SECRET'];
+for (const v of requiredVars) {
+    if (!process.env[v]) {
+        console.warn(`⚠️  Missing required env var: ${v}`);
+    }
+}
 
 // MongoDB Connection
 const MONGO_URI = process.env.MONGO_URI;
-console.log(process.env.MONGO_URI);
 mongoose.connect(MONGO_URI)
-  .then(() => {
-    console.log('✅ MongoDB Connected');
-    const PORT = process.env.PORT || 5000;
-    server.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-      console.log(`🔌 Socket.IO ready`);
+    .then(() => {
+        console.log('✅ MongoDB Connected', MONGO_URI);
+        const PORT = process.env.PORT || 5000;
+        server.listen(PORT, () => {
+            console.log(`🚀 Server running on port ${PORT}`);
+            console.log(`🔌 Socket.IO ready`);
+            console.log(`🔗 RPC: ${process.env.RPC_URL || 'https://rpc-amoy.polygon.technology'}`);
+        });
+    })
+    .catch((err) => {
+        console.error('❌ MongoDB Connection Error:', err.message);
+        // Start server anyway for development
+        const PORT = process.env.PORT || 5000;
+        server.listen(PORT, () => {
+            console.log(`🚀 Server running on port ${PORT} (without DB)`);
+            console.log(`🔌 Socket.IO ready`);
+        });
     });
-  })
-  .catch((err) => {
-    console.error('❌ MongoDB Connection Error:', err.message);
-    // Start server anyway for development
-    const PORT = process.env.PORT || 5000;
-    server.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT} (without DB)`);
-      console.log(`🔌 Socket.IO ready`);
-    });
-  });

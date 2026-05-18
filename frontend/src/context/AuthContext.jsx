@@ -1,7 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import { ethers } from 'ethers';
-import { getProfile, updateWallet } from '../services/api';
-import { NETWORK_CONFIG } from '../utils/contract';
+import { getProfile, getBalance as fetchBalanceAPI } from '../services/api';
 
 const AuthContext = createContext();
 
@@ -29,7 +27,7 @@ export function AuthProvider({ children }) {
             setUser(res.data);
             if (res.data.walletAddress) {
                 setWalletAddress(res.data.walletAddress);
-                fetchBalance(res.data.walletAddress);
+                refreshBalance();
             }
         } catch (err) {
             console.error('Failed to load user:', err);
@@ -39,12 +37,13 @@ export function AuthProvider({ children }) {
         }
     };
 
-    const fetchBalance = async (address) => {
+    // Fetch balance from backend RPC (no MetaMask needed)
+    const refreshBalance = async () => {
         try {
-            if (window.ethereum) {
-                const provider = new ethers.BrowserProvider(window.ethereum);
-                const bal = await provider.getBalance(address);
-                setBalance(ethers.formatEther(bal));
+            const res = await fetchBalanceAPI();
+            setBalance(res.data.balance || '0');
+            if (res.data.walletAddress) {
+                setWalletAddress(res.data.walletAddress);
             }
         } catch (err) {
             console.error('Balance fetch error:', err);
@@ -55,65 +54,33 @@ export function AuthProvider({ children }) {
         setUser(userData);
         setToken(authToken);
         localStorage.setItem('blockpay_token', authToken);
+        // Save user info for quick PIN unlock on next visit
+        if (userData.phone) {
+            localStorage.setItem('blockpay_user_phone', userData.phone);
+        }
+        if (userData.name) {
+            localStorage.setItem('blockpay_user_name', userData.name);
+        }
+        if (userData.id) {
+            localStorage.setItem('blockpay_user_id', userData.id);
+        }
+        // Clear any previous logout flag
+        localStorage.removeItem('blockpay_logged_out');
         if (userData.walletAddress) {
             setWalletAddress(userData.walletAddress);
-            fetchBalance(userData.walletAddress);
+            // Fetch balance after a short delay to allow chain to process
+            setTimeout(() => refreshBalance(), 1000);
         }
     };
 
+    // Clear session — called on token expiry AND explicit logout
+    // Note: Profile.jsx handles setting 'blockpay_logged_out' flag for explicit logout
     const logout = () => {
         setUser(null);
         setToken(null);
         setWalletAddress('');
         setBalance('0');
         localStorage.removeItem('blockpay_token');
-    };
-
-    const connectWallet = async () => {
-        if (!window.ethereum) {
-            alert('Please install MetaMask to connect your wallet!');
-            return null;
-        }
-
-        try {
-            // Request accounts
-            await window.ethereum.request({ method: 'eth_requestAccounts' });
-
-            // Try to switch to Polygon Amoy
-            try {
-                await window.ethereum.request({
-                    method: 'wallet_switchEthereumChain',
-                    params: [{ chainId: NETWORK_CONFIG.chainId }]
-                });
-            } catch (switchError) {
-                // Chain not added, add it
-                if (switchError.code === 4902) {
-                    await window.ethereum.request({
-                        method: 'wallet_addEthereumChain',
-                        params: [NETWORK_CONFIG]
-                    });
-                }
-            }
-
-            const provider = new ethers.BrowserProvider(window.ethereum);
-            const signer = await provider.getSigner();
-            const address = await signer.getAddress();
-
-            // Save to backend
-            await updateWallet(address);
-            setWalletAddress(address);
-            fetchBalance(address);
-
-            // Reload user
-            await loadUser();
-
-            return address;
-        } catch (err) {
-            console.error('Wallet connection error:', err);
-            const message = err.response?.data?.message || 'Failed to connect wallet. Please try again.';
-            alert(message);
-            return null;
-        }
     };
 
     const value = {
@@ -124,9 +91,8 @@ export function AuthProvider({ children }) {
         loading,
         loginUser,
         logout,
-        connectWallet,
         loadUser,
-        fetchBalance
+        refreshBalance
     };
 
     return (

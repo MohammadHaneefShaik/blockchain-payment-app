@@ -1,40 +1,108 @@
-import { useState } from 'react';
+/**
+ * Signup — Enter name + phone, then send OTP via Firebase Phone Auth
+ * Step 1 of the new user registration flow
+ */
+import { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { signup } from '../services/api';
-import { useAuth } from '../context/AuthContext';
+import { auth, RecaptchaVerifier, signInWithPhoneNumber } from '../firebase';
 
 export default function Signup() {
     const [name, setName] = useState('');
     const [phone, setPhone] = useState('');
-    const [password, setPassword] = useState('');
-    const [confirmPassword, setConfirmPassword] = useState('');
+    const [countryCode, setCountryCode] = useState('+91');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
     const navigate = useNavigate();
-    const { loginUser } = useAuth();
+    const recaptchaRef = useRef(null);
+
+    // Set up invisible reCAPTCHA on mount
+    useEffect(() => {
+        try {
+            if (!window.recaptchaVerifier) {
+                window.recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
+                    size: 'invisible',
+                    callback: () => {
+                        console.log('reCAPTCHA verified');
+                    },
+                    'expired-callback': () => {
+                        console.log('reCAPTCHA expired');
+                        setError('reCAPTCHA expired. Please try again.');
+                    }
+                });
+            }
+        } catch (err) {
+            console.error('reCAPTCHA setup error:', err);
+        }
+
+        return () => {
+            if (window.recaptchaVerifier) {
+                try {
+                    window.recaptchaVerifier.clear();
+                } catch (e) { /* ignore */ }
+                window.recaptchaVerifier = null;
+            }
+        };
+    }, []);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
 
-        if (password !== confirmPassword) {
-            setError('Passwords do not match');
+        if (!name.trim()) {
+            setError('Please enter your name');
             return;
         }
 
-        if (password.length < 6) {
-            setError('Password must be at least 6 characters');
+        if (!phone || phone.length < 10) {
+            setError('Enter a valid phone number');
             return;
         }
 
         setLoading(true);
 
         try {
-            const res = await signup({ name, phone, password });
-            loginUser(res.data.user, res.data.token);
-            navigate('/verify-otp', { state: { phone } });
+            const fullPhone = `${countryCode}${phone}`;
+            const appVerifier = window.recaptchaVerifier;
+
+            if (!appVerifier) {
+                setError('reCAPTCHA not loaded. Please refresh the page.');
+                setLoading(false);
+                return;
+            }
+
+            // Send OTP via Firebase Phone Auth (real SMS!)
+            const confirmationResult = await signInWithPhoneNumber(auth, fullPhone, appVerifier);
+
+            // Store confirmation result for verification
+            window.confirmationResult = confirmationResult;
+
+            navigate('/verify-otp', { state: { phone, name, countryCode } });
         } catch (err) {
-            setError(err.response?.data?.message || 'Signup failed');
+            console.error('Firebase OTP error:', err);
+
+            // Reset reCAPTCHA on error
+            if (window.recaptchaVerifier) {
+                try {
+                    window.recaptchaVerifier.clear();
+                } catch (e) { /* ignore */ }
+                window.recaptchaVerifier = null;
+            }
+            // Recreate it
+            try {
+                window.recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
+                    size: 'invisible'
+                });
+            } catch (e) { /* ignore */ }
+
+            if (err.code === 'auth/invalid-phone-number') {
+                setError('Invalid phone number format. Use country code + number.');
+            } else if (err.code === 'auth/too-many-requests') {
+                setError('Too many attempts. Please try again later.');
+            } else if (err.code === 'auth/quota-exceeded') {
+                setError('SMS quota exceeded. Try again tomorrow.');
+            } else {
+                setError(err.message || 'Failed to send OTP');
+            }
         } finally {
             setLoading(false);
         }
@@ -80,67 +148,48 @@ export default function Signup() {
                                 value={name}
                                 onChange={(e) => setName(e.target.value)}
                                 required
+                                autoFocus
                             />
                         </div>
                     </div>
 
                     <div className="input-group">
                         <label>Phone Number</label>
-                        <div className="input-wrapper">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" />
-                            </svg>
-                            <input
-                                type="tel"
-                                placeholder="Enter phone number"
-                                value={phone}
-                                onChange={(e) => setPhone(e.target.value)}
-                                required
-                            />
-                        </div>
-                    </div>
-
-                    <div className="input-group">
-                        <label>Password</label>
-                        <div className="input-wrapper">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                            </svg>
-                            <input
-                                type="password"
-                                placeholder="Create password (min 6 chars)"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                required
-                            />
-                        </div>
-                    </div>
-
-                    <div className="input-group">
-                        <label>Confirm Password</label>
-                        <div className="input-wrapper">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-                            </svg>
-                            <input
-                                type="password"
-                                placeholder="Confirm password"
-                                value={confirmPassword}
-                                onChange={(e) => setConfirmPassword(e.target.value)}
-                                required
-                            />
+                        <div className="input-with-action">
+                            <div className="input-wrapper" style={{ maxWidth: '90px' }}>
+                                <input
+                                    type="text"
+                                    value={countryCode}
+                                    onChange={(e) => setCountryCode(e.target.value)}
+                                    style={{ textAlign: 'center' }}
+                                />
+                            </div>
+                            <div className="input-wrapper">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" />
+                                </svg>
+                                <input
+                                    type="tel"
+                                    placeholder="Phone number"
+                                    value={phone}
+                                    onChange={(e) => setPhone(e.target.value)}
+                                    required
+                                />
+                            </div>
                         </div>
                     </div>
 
                     <button type="submit" className="btn-primary" disabled={loading}>
-                        {loading ? <span className="btn-spinner"></span> : 'Create Account'}
+                        {loading ? <span className="btn-spinner"></span> : 'Send OTP'}
                     </button>
 
                     <p className="auth-link">
-                        Already have an account? <Link to="/">Login</Link>
+                        Already have an account? <Link to="/login">Login</Link>
                     </p>
                 </form>
+
+                {/* Invisible reCAPTCHA container */}
+                <div id="recaptcha-container" ref={recaptchaRef}></div>
             </div>
         </div>
     );

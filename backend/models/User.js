@@ -17,20 +17,35 @@ const UserSchema = new mongoose.Schema({
         index: true
     },
 
-    password: {
+    // 4-digit PIN (bcrypt hashed) — replaces password
+    pin: {
         type: String,
-        required: [true, 'Password is required'],
-        minlength: 6
+        required: [true, 'PIN is required'],
+        minlength: 4
     },
 
+    // Blockchain wallet address (auto-created on signup)
     walletAddress: {
         type: String,
         default: ''
     },
 
+    // AES-encrypted private key (stored securely)
+    encryptedPrivateKey: {
+        type: String,
+        default: ''
+    },
+
+    // QR code data for receiving payments
     qrCode: {
         type: String,
         default: ''
+    },
+
+    // Cached balance (updated periodically)
+    balance: {
+        type: String,
+        default: '0'
     },
 
     isVerified: {
@@ -45,24 +60,22 @@ const UserSchema = new mongoose.Schema({
 
 });
 
-// Hash password before saving
+// Hash PIN before saving
 UserSchema.pre('save', async function () {
 
-    if (!this.isModified('password')) {
+    if (!this.isModified('pin')) {
         return;
     }
 
     const salt = await bcrypt.genSalt(10);
-
-    this.password = await bcrypt.hash(this.password, salt);
+    this.pin = await bcrypt.hash(this.pin, salt);
 
 });
 
-// Compare password method
-UserSchema.methods.comparePassword = async function (candidatePassword) {
-
-    return bcrypt.compare(candidatePassword, this.password);
-
+// Compare PIN method
+UserSchema.methods.comparePin = async function (candidatePin) {
+    if (!this.pin) return false;
+    return bcrypt.compare(candidatePin, this.pin);
 };
 
 module.exports =

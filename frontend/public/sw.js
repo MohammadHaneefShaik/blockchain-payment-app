@@ -1,4 +1,4 @@
-const CACHE_NAME = 'blockpay-v1';
+const CACHE_NAME = 'blockpay-v2';
 const STATIC_ASSETS = [
     '/',
     '/index.html',
@@ -32,7 +32,6 @@ self.addEventListener('activate', (event) => {
 
 // Fetch — network first, fallback to cache
 self.addEventListener('fetch', (event) => {
-    // Skip non-GET requests and API calls
     if (event.request.method !== 'GET') return;
     if (event.request.url.includes('/api/')) return;
     if (event.request.url.includes('socket.io')) return;
@@ -40,7 +39,6 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
         fetch(event.request)
             .then((response) => {
-                // Cache successful responses
                 if (response.status === 200) {
                     const responseClone = response.clone();
                     caches.open(CACHE_NAME).then((cache) => {
@@ -50,7 +48,6 @@ self.addEventListener('fetch', (event) => {
                 return response;
             })
             .catch(() => {
-                // Fallback to cache
                 return caches.match(event.request);
             })
     );

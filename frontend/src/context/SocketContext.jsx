@@ -17,7 +17,7 @@ export function SocketProvider({ children }) {
     // Connect to Socket.IO when user logs in
     useEffect(() => {
         if (user && token) {
-            const newSocket = io('http://127.0.0.1:5000', {
+            const newSocket = io('http://127.0.0.1:5001', {
                 transports: ['websocket', 'polling']
             });
 

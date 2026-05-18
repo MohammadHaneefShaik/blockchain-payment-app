@@ -3,8 +3,8 @@ import { NavLink, useLocation } from 'react-router-dom';
 export default function Navbar() {
     const location = useLocation();
 
-    // Don't show navbar on auth pages
-    const hideOn = ['/', '/signup', '/verify-otp'];
+    // Hide navbar on auth/splash pages
+    const hideOn = ['/', '/login', '/signup', '/verify-otp', '/set-pin'];
     if (hideOn.includes(location.pathname)) return null;
 
     return (

@@ -6,19 +6,17 @@ import { getTransactions, getUnreadCount } from '../services/api';
 import NotificationBell from '../components/NotificationBell';
 
 export default function Dashboard() {
-    const { user, walletAddress, balance, connectWallet, loading } = useAuth();
+    const { user, walletAddress, balance, refreshBalance, loading } = useAuth();
     const { setUnreadCount } = useSocket();
     const [recentTxns, setRecentTxns] = useState([]);
     const [txnLoading, setTxnLoading] = useState(false);
     const navigate = useNavigate();
 
     useEffect(() => {
-        if (walletAddress) {
-            loadTransactions();
-        }
-        // Load unread notification count
+        loadTransactions();
         loadUnreadCount();
-    }, [walletAddress]);
+        refreshBalance();
+    }, []);
 
     const loadUnreadCount = async () => {
         try {
@@ -42,11 +40,7 @@ export default function Dashboard() {
     };
 
     if (loading) {
-        return (
-            <div className="loading-screen">
-                <div className="loading-spinner"></div>
-            </div>
-        );
+        return (<div className="loading-screen"><div className="loading-spinner"></div></div>);
     }
 
     return (
@@ -59,6 +53,8 @@ export default function Dashboard() {
                         <h1 className="user-name">{user?.name || 'User'} 👋</h1>
                     </div>
                     <div className="header-actions">
+                        {/* settings moved to profile */}
+
                         <NotificationBell />
                         <div className="header-avatar" onClick={() => navigate('/profile')}>
                             {user?.name?.charAt(0)?.toUpperCase() || 'U'}
@@ -73,22 +69,13 @@ export default function Dashboard() {
                 <div className="balance-content">
                     <p className="balance-label">Total Balance</p>
                     <h2 className="balance-amount">
-                        {walletAddress ? `${parseFloat(balance).toFixed(4)} MATIC` : '---'}
+                        {walletAddress ? `${parseFloat(balance).toFixed(5)} POL` : '---'}
                     </h2>
-                    {walletAddress ? (
+                    {walletAddress && (
                         <p className="wallet-addr">
                             {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
-                            <span className="connected-badge">● Connected</span>
+                            <span className="connected-badge">● Active</span>
                         </p>
-                    ) : (
-                        <button className="connect-wallet-btn" onClick={connectWallet}>
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M21 12V7H5a2 2 0 0 1 0-4h14v4" />
-                                <path d="M3 5v14a2 2 0 0 0 2 2h16v-5" />
-                                <path d="M18 12a2 2 0 0 0 0 4h4v-4h-4z" />
-                            </svg>
-                            Connect MetaMask Wallet
-                        </button>
                     )}
                 </div>
             </div>
@@ -144,14 +131,8 @@ export default function Dashboard() {
                     )}
                 </div>
 
-                {!walletAddress ? (
-                    <div className="empty-state">
-                        <p>Connect your wallet to start transacting</p>
-                    </div>
-                ) : txnLoading ? (
-                    <div className="empty-state">
-                        <div className="loading-spinner small"></div>
-                    </div>
+                {txnLoading ? (
+                    <div className="empty-state"><div className="loading-spinner small"></div></div>
                 ) : recentTxns.length === 0 ? (
                     <div className="empty-state">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="48" height="48">
@@ -173,12 +154,10 @@ export default function Dashboard() {
                                     <p className="txn-party">
                                         {txn.senderPhone === user?.phone ? txn.receiverPhone : txn.senderPhone}
                                     </p>
-                                    <p className="txn-time">
-                                        {new Date(txn.timestamp).toLocaleDateString()}
-                                    </p>
+                                    <p className="txn-time">{new Date(txn.timestamp).toLocaleDateString()}</p>
                                 </div>
                                 <div className={`txn-amount ${txn.senderPhone === user?.phone ? 'negative' : 'positive'}`}>
-                                    {txn.senderPhone === user?.phone ? '-' : '+'}{txn.amount} MATIC
+                                    {txn.senderPhone === user?.phone ? '-' : '+'}{txn.amount} POL
                                 </div>
                             </div>
                         ))}
