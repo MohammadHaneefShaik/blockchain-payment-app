@@ -1,0 +1,44 @@
+{
+    "name": "BlockPay",
+    "short_name": "BlockPay",
+    "description": "Blockchain-powered QR payment system. Send crypto using phone numbers.",
+    "start_url": "/dashboard",
+    "display": "standalone",
+    "background_color": "#0a0b0f",
+    "theme_color": "#0a0b0f",
+    "orientation": "portrait",
+    "scope": "/",
+    "icons": [
+        {
+            "src": "/favicon.svg",
+            "sizes": "any",
+            "type": "image/svg+xml",
+            "purpose": "any"
+        },
+        {
+            "src": "/icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "/icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ],
+    "categories": ["finance", "utilities"],
+    "shortcuts": [
+        {
+            "name": "Send Payment",
+            "url": "/send",
+            "description": "Send crypto to someone"
+        },
+        {
+            "name": "Scan QR",
+            "url": "/qr",
+            "description": "Scan a QR code to pay"
+        }
+    ]
+}
