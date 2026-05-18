@@ -70,51 +70,116 @@ export function AuthProvider({ children }) {
     };
 
     const connectWallet = async () => {
-        if (!window.ethereum) {
-            alert('Please install MetaMask to connect your wallet!');
-            return null;
-        }
 
-        try {
-            // Request accounts
-            await window.ethereum.request({ method: 'eth_requestAccounts' });
+    try {
 
-            // Try to switch to Polygon Amoy
+        // Detect MetaMask / Ethereum provider
+        if (window.ethereum) {
+
+            // Request wallet access
+            await window.ethereum.request({
+                method: 'eth_requestAccounts'
+            });
+
+            // Switch to Polygon Amoy
             try {
+
                 await window.ethereum.request({
+
                     method: 'wallet_switchEthereumChain',
-                    params: [{ chainId: NETWORK_CONFIG.chainId }]
+
+                    params: [
+                        {
+                            chainId:
+                                NETWORK_CONFIG.chainId
+                        }
+                    ]
+
                 });
+
             } catch (switchError) {
-                // Chain not added, add it
+
+                // Add network if missing
                 if (switchError.code === 4902) {
+
                     await window.ethereum.request({
+
                         method: 'wallet_addEthereumChain',
+
                         params: [NETWORK_CONFIG]
+
                     });
+
                 }
+
             }
 
-            const provider = new ethers.BrowserProvider(window.ethereum);
-            const signer = await provider.getSigner();
-            const address = await signer.getAddress();
+            // Connect wallet
+            const provider =
+                new ethers.BrowserProvider(
+                    window.ethereum
+                );
 
-            // Save to backend
+            const signer =
+                await provider.getSigner();
+
+            const address =
+                await signer.getAddress();
+
+            // Save wallet to backend
             await updateWallet(address);
+
             setWalletAddress(address);
+
+            // Fetch balance
             fetchBalance(address);
 
-            // Reload user
+            // Reload profile
             await loadUser();
 
             return address;
-        } catch (err) {
-            console.error('Wallet connection error:', err);
-            const message = err.response?.data?.message || 'Failed to connect wallet. Please try again.';
-            alert(message);
+        }
+
+        // Mobile fallback
+        const isMobile =
+            /Android|iPhone|iPad|iPod/i
+                .test(navigator.userAgent);
+
+        if (isMobile) {
+
+            // Redirect into MetaMask browser
+            const dappUrl =
+                window.location.host;
+
+            window.location.href =
+                `https://metamask.app.link/dapp/${dappUrl}`;
+
             return null;
         }
-    };
+
+        // Desktop without MetaMask
+        alert(
+            'Please install MetaMask!'
+        );
+
+        return null;
+
+    } catch (err) {
+
+        console.error(
+            'Wallet connection error:',
+            err
+        );
+
+        alert(
+            'Failed to connect wallet'
+        );
+
+        return null;
+
+    }
+
+};
 
     const value = {
         user,
