@@ -11,7 +11,11 @@ const Transaction = require('../models/Transaction');
 const Notification = require('../models/Notification');
 const User = require('../models/User');
 const { notifyUser } = require('../socket');
-const { sendTransaction, getProvider } = require('../utils/blockchain');
+const {
+    sendTransaction,
+    getProvider,
+    getBalance
+} = require('../utils/blockchain');
 const router = express.Router();
 
 /**
@@ -61,6 +65,29 @@ router.post('/send', auth, async (req, res) => {
             return res.status(400).json({ message: 'Receiver has no wallet' });
         }
 
+        // Check LIVE blockchain balance
+const liveBalance =
+    parseFloat(
+        await getBalance(
+            sender.walletAddress
+        )
+    );
+
+// Include gas fee buffer
+const requiredBalance =
+    amountNum + 0.002;
+
+if (liveBalance < requiredBalance) {
+
+    return res.status(400).json({
+
+        message:
+            `Insufficient balance. Need at least ${requiredBalance.toFixed(4)} POL including gas fees`
+
+    });
+
+}
+
         // Prevent duplicate transactions (same sender + receiver + amount within 30 seconds)
         const recentDuplicate = await Transaction.findOne({
             senderPhone: sender.phone,
@@ -103,6 +130,20 @@ router.post('/send', auth, async (req, res) => {
 
         await transaction.save();
 
+        
+        // Refresh cached balances
+sender.balance =
+    await getBalance(
+        sender.walletAddress
+    );
+
+receiver.balance =
+    await getBalance(
+        receiver.walletAddress
+    );
+
+await sender.save();
+await receiver.save();
         // === Create notifications for both users ===
 
         // Notification for receiver (payment received)
