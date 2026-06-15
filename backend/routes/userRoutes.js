@@ -47,9 +47,8 @@ router.get('/balance', auth, async (req, res) => {
         // Fetch live balance from blockchain RPC
         const balance = await getBalance(user.walletAddress);
 
-        // Update cached balance in database
-        user.balance = balance;
-        await user.save();
+        // Update cached balance in database (use updateOne to skip full-doc validation on legacy users)
+        await User.updateOne({ _id: user._id }, { $set: { balance } });
 
         res.json({
             balance,
