@@ -1,50 +1,68 @@
 /**
- * mailer.js — Email utility using Resend HTTP API
+ * mailer.js — Email utility using Brevo (Sendinblue) HTTP API
  *
- * Why Resend instead of nodemailer + SMTP?
- * Render (and many cloud hosts) block outbound SMTP ports (25, 465, 587).
- * Resend communicates over HTTPS so it is never blocked.
+ * Why Brevo instead of Resend or SMTP?
+ * - Render blocks all outbound SMTP ports (25, 465, 587)
+ * - Resend free plan restricts recipients to your own email (requires domain verification)
+ * - Brevo free plan: 300 emails/day, send to ANY address, no domain verification needed
  *
  * Setup:
- *   1. Sign up free at https://resend.com
- *   2. Create an API key
- *   3. Add RESEND_API_KEY to your Render environment variables
+ *   1. Sign up free at https://brevo.com
+ *   2. Go to Settings → SMTP & API → API Keys → Generate a new API key
+ *   3. Add BREVO_API_KEY to your Render environment variables
  */
 
-const { Resend } = require('resend');
-
-const resend = new Resend(process.env.RESEND_API_KEY);
-
-// Log readiness on startup
-if (process.env.RESEND_API_KEY) {
-    console.log('✅ Resend email client ready');
-} else {
-    console.warn('⚠️  RESEND_API_KEY is not set — emails will fail');
-}
-
 /**
- * Send an email via Resend HTTP API.
+ * Send an email via Brevo Transactional Email HTTP API.
+ * Uses built-in fetch (Node 18+) — no extra packages needed.
+ *
  * @param {string} to      - Recipient email address
  * @param {string} subject - Email subject
  * @param {string} html    - HTML body content
  */
 async function sendEmail(to, subject, html) {
-    const fromAddress = process.env.EMAIL_FROM || 'BlockPay <onboarding@resend.dev>';
+    const apiKey = process.env.BREVO_API_KEY;
 
-    const { data, error } = await resend.emails.send({
-        from: fromAddress,
-        to,
-        subject,
-        html,
-    });
-
-    if (error) {
-        console.error('❌ Resend error:', error);
-        throw new Error(error.message || 'Failed to send email');
+    if (!apiKey) {
+        throw new Error('BREVO_API_KEY environment variable is not set');
     }
 
-    console.log('📧 Email sent via Resend:', data.id);
+    const senderName  = process.env.EMAIL_SENDER_NAME  || 'BlockPay';
+    const senderEmail = process.env.EMAIL_SENDER_EMAIL || 'blockpay.auth@gmail.com';
+
+    const payload = {
+        sender:   { name: senderName, email: senderEmail },
+        to:       [{ email: to }],
+        subject,
+        htmlContent: html,
+    };
+
+    const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method:  'POST',
+        headers: {
+            'accept':       'application/json',
+            'api-key':      apiKey,
+            'content-type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+        console.error('❌ Brevo error:', data);
+        throw new Error(data.message || `Brevo API error: ${response.status}`);
+    }
+
+    console.log('📧 Email sent via Brevo:', data.messageId);
     return data;
+}
+
+// Log readiness on startup
+if (process.env.BREVO_API_KEY) {
+    console.log('✅ Brevo email client ready');
+} else {
+    console.warn('⚠️  BREVO_API_KEY is not set — emails will fail');
 }
 
 module.exports = { sendEmail };
