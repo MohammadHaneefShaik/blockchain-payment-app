@@ -1,43 +1,50 @@
-const nodemailer = require('nodemailer');
+/**
+ * mailer.js — Email utility using Resend HTTP API
+ *
+ * Why Resend instead of nodemailer + SMTP?
+ * Render (and many cloud hosts) block outbound SMTP ports (25, 465, 587).
+ * Resend communicates over HTTPS so it is never blocked.
+ *
+ * Setup:
+ *   1. Sign up free at https://resend.com
+ *   2. Create an API key
+ *   3. Add RESEND_API_KEY to your Render environment variables
+ */
 
-const transport = nodemailer.createTransport({
-  host: process.env.EMAIL_HOST,
-  port: Number(process.env.EMAIL_PORT) || 587,
-  secure: false,          // true = port 465 (SSL), false = port 587 (STARTTLS)
-  requireTLS: true,       // force STARTTLS upgrade
-  connectionTimeout: 10000,
-  greetingTimeout: 10000,
-  socketTimeout: 15000,
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
+const { Resend } = require('resend');
 
-// Verify SMTP connection on startup
-transport.verify((err) => {
-  if (err) {
-    console.error('❌ SMTP connection failed:', err.message);
-  } else {
-    console.log('✅ SMTP ready — emails can be sent');
-  }
-});
+const resend = new Resend(process.env.RESEND_API_KEY);
+
+// Log readiness on startup
+if (process.env.RESEND_API_KEY) {
+    console.log('✅ Resend email client ready');
+} else {
+    console.warn('⚠️  RESEND_API_KEY is not set — emails will fail');
+}
 
 /**
- * Send an email.
- * @param {string} to - Recipient email address.
- * @param {string} subject - Email subject.
- * @param {string} html - HTML content of the email.
+ * Send an email via Resend HTTP API.
+ * @param {string} to      - Recipient email address
+ * @param {string} subject - Email subject
+ * @param {string} html    - HTML body content
  */
 async function sendEmail(to, subject, html) {
-  const info = await transport.sendMail({
-    from: process.env.EMAIL_FROM,
-    to,
-    subject,
-    html,
-  });
-  console.log('📧 Email sent:', info.messageId);
-  return info;
+    const fromAddress = process.env.EMAIL_FROM || 'BlockPay <onboarding@resend.dev>';
+
+    const { data, error } = await resend.emails.send({
+        from: fromAddress,
+        to,
+        subject,
+        html,
+    });
+
+    if (error) {
+        console.error('❌ Resend error:', error);
+        throw new Error(error.message || 'Failed to send email');
+    }
+
+    console.log('📧 Email sent via Resend:', data.id);
+    return data;
 }
 
 module.exports = { sendEmail };
