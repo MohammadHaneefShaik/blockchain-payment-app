@@ -1,11 +1,8 @@
-/**
- * VerifyOTP — 6-digit OTP verification via Firebase Phone Auth
- * After Firebase verifies: existing users → dashboard, new users → SetPIN
- */
+// VerifyOTP.jsx – Email based OTP verification
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { login as apiLogin } from '../services/api';
+import { verifyOTP } from '../services/api';
 
 export default function VerifyOTP() {
     const [otp, setOtp] = useState(['', '', '', '', '', '']);
@@ -14,6 +11,8 @@ export default function VerifyOTP() {
     const navigate = useNavigate();
     const location = useLocation();
     const { loginUser } = useAuth();
+
+    const email = location.state?.email || '';
     const phone = location.state?.phone || '';
     const name = location.state?.name || '';
     const countryCode = location.state?.countryCode || '+91';
@@ -23,18 +22,11 @@ export default function VerifyOTP() {
         const newOtp = [...otp];
         newOtp[index] = value;
         setOtp(newOtp);
-
-        // Auto-focus next input
         if (value && index < 5) {
             document.getElementById(`otp-${index + 1}`)?.focus();
         }
-
-        // Auto-submit when all 6 digits are entered
-        if (value && index === 5) {
-            const otpString = newOtp.join('');
-            if (otpString.length === 6) {
-                handleVerify(otpString);
-            }
+        if (index === 5 && newOtp.join('').length === 6) {
+            handleVerify(newOtp.join(''));
         }
     };
 
@@ -47,88 +39,53 @@ export default function VerifyOTP() {
     const handleVerify = async (otpCode) => {
         setError('');
         setLoading(true);
-
+        if (!email) {
+            setError('Email missing');
+            setLoading(false);
+            return;
+        }
         try {
-            // Verify OTP with Firebase
-            if (!window.confirmationResult) {
-                setError('Session expired. Please go back and resend OTP.');
-                setLoading(false);
-                return;
-            }
-
-            const result = await window.confirmationResult.confirm(otpCode);
-            console.log('✅ Firebase OTP verified:', result.user.phoneNumber);
-
-            // Phone is now verified by Firebase!
-            // Check if this is an existing user by trying to login
-            // For new users, proceed to PIN setup
-            try {
-                // Try to see if user exists in our backend
-                const { default: API } = await import('../services/api');
-                const checkRes = await API.post('/auth/verify-otp', {
-                    phone,
-                    otp: 'firebase-verified',
-                    firebaseUid: result.user.uid
-                });
-
-                if (checkRes.data.isExistingUser) {
-                    // Existing user — they already have an account
-                    loginUser(checkRes.data.user, checkRes.data.token);
-                    sessionStorage.setItem('blockpay_pin_verified', 'true');
-                    navigate('/dashboard', { replace: true });
-                } else {
-                    // New user — go to PIN setup
-                    navigate('/set-pin', {
-                        state: {
-                            phone,
-                            name,
-                            tempToken: checkRes.data.tempToken
-                        },
-                        replace: true
-                    });
-                }
-            } catch (backendErr) {
-                // If backend doesn't recognize the user, treat as new
-                // Generate a simple temp token client-side for PIN setup
+            const res = await verifyOTP({ email, otp: otpCode });
+            if (res.data.isExistingUser) {
+                // Existing user – log them in
+                loginUser(res.data.user, res.data.token);
+                sessionStorage.setItem('blockpay_pin_verified', 'true');
+                navigate('/dashboard', { replace: true });
+            } else {
+                // New user – proceed to set PIN
+                const { tempToken } = res.data;
                 navigate('/set-pin', {
-                    state: {
-                        phone,
-                        name,
-                        firebaseVerified: true,
-                        firebaseUid: result.user.uid
-                    },
+                    state: { email, phone, name, tempToken },
                     replace: true
                 });
             }
         } catch (err) {
-            console.error('OTP verification error:', err);
-            if (err.code === 'auth/invalid-verification-code') {
-                setError('Invalid OTP. Please check and try again.');
-            } else if (err.code === 'auth/code-expired') {
-                setError('OTP expired. Please go back and resend.');
+            const msg = err.response?.data?.message || 'OTP verification failed';
+            if (msg.includes('Invalid session')) {
+                // Show a friendly message and let user click Resend OTP
+                setError('Session expired. Please request a new OTP.');
+                setOtp(['', '', '', '', '', '']); // clear entered digits
             } else {
-                setError(err.message || 'OTP verification failed');
+                setError(msg);
             }
         } finally {
             setLoading(false);
         }
     };
 
-    const handleSubmit = async (e) => {
+    const handleSubmit = (e) => {
         e.preventDefault();
         const otpString = otp.join('');
-
         if (otpString.length !== 6) {
             setError('Please enter all 6 digits');
             return;
         }
-
-        await handleVerify(otpString);
+        handleVerify(otpString);
     };
 
     const handleResend = () => {
-        // Go back to signup to resend OTP
-        navigate('/signup', { state: { name, phone } });
+        // Resend OTP using email flow – redirect to signup where email can be resent
+        navigate('/signup', { state: { email, phone, name, countryCode } });
     };
 
     return (
@@ -138,7 +95,6 @@ export default function VerifyOTP() {
                 <div className="bg-orb bg-orb-2"></div>
                 <div className="bg-orb bg-orb-3"></div>
             </div>
-
             <div className="auth-container">
                 <div className="auth-logo">
                     <div className="logo-icon">
@@ -149,19 +105,11 @@ export default function VerifyOTP() {
                             <rect x="25" y="25" width="8" height="8" rx="2" fill="currentColor" />
                         </svg>
                     </div>
-                    <h1>Verify Phone</h1>
-                    <p className="auth-subtitle">Enter the 6-digit code</p>
+                    <h1>Verify Email</h1>
+                    <p className="auth-subtitle">Enter the 6‑digit code sent to {email}</p>
                 </div>
-
                 <form className="auth-form" onSubmit={handleSubmit}>
-                    <div className="otp-info">
-                        <p>We sent a verification code to</p>
-                        <strong>{countryCode} {phone || 'your phone'}</strong>
-                        <p className="otp-hint">📱 Check your SMS messages</p>
-                    </div>
-
                     {error && <div className="error-message">{error}</div>}
-
                     <div className="otp-inputs">
                         {otp.map((digit, index) => (
                             <input
@@ -178,16 +126,12 @@ export default function VerifyOTP() {
                             />
                         ))}
                     </div>
-
                     <button type="submit" className="btn-primary" disabled={loading}>
                         {loading ? <span className="btn-spinner"></span> : 'Verify OTP'}
                     </button>
-
                     <p className="auth-link">
                         Didn't receive code?{' '}
-                        <button type="button" className="link-btn" onClick={handleResend}>
-                            Resend OTP
-                        </button>
+                        <button type="button" className="link-btn" onClick={handleResend}>Resend OTP</button>
                     </p>
                 </form>
             </div>

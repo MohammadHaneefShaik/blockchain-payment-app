@@ -136,7 +136,7 @@ a:hover { color: var(--accent-indigo); }
 }
 .splash-tagline { color: var(--text-secondary); font-size: 0.95rem; letter-spacing: 0.5px; }
 
-.splash-loader { width: 120px; height: 3px; background: var(--bg-card); border-radius: 3px; margin-top: 40px; overflow: hidden; }
+.splash-loader { width: 120px; height: 3px; background: var(--bg-card); border-radius: 3px; margin: 40px auto 0; overflow: hidden; }
 .splash-loader-bar {
     height: 100%; width: 40%; background: var(--gradient-primary);
     border-radius: 3px; animation: loader 1.5s ease-in-out infinite;

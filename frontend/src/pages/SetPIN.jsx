@@ -14,6 +14,7 @@ export default function SetPIN() {
     const location = useLocation();
     const { loginUser } = useAuth();
     const phone = location.state?.phone || '';
+    const email = location.state?.email || '';
     const name = location.state?.name || '';
     const tempToken = location.state?.tempToken || '';
     const firebaseVerified = location.state?.firebaseVerified || false;
@@ -45,7 +46,7 @@ export default function SetPIN() {
         }
         setError(''); setLoading(true); setStep(3);
         try {
-            const payload = { name, phone, pin: confirmPin };
+            const payload = { name, email, phone, pin: confirmPin };
             if (tempToken) payload.tempToken = tempToken;
             if (firebaseVerified) {
                 payload.firebaseVerified = true;

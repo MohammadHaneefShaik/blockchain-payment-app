@@ -1,13 +1,10 @@
-/**
- * Signup — Enter name + phone, then send OTP via Firebase Phone Auth
- * Step 1 of the new user registration flow
- */
 import { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { auth, RecaptchaVerifier, signInWithPhoneNumber } from '../firebase';
+import { sendOTP } from '../services/api';
 
 export default function Signup() {
     const [name, setName] = useState('');
+    const [email, setEmail] = useState('');
     const [phone, setPhone] = useState('');
     const [countryCode, setCountryCode] = useState('+91');
     const [error, setError] = useState('');
@@ -15,25 +12,8 @@ export default function Signup() {
     const navigate = useNavigate();
     const recaptchaRef = useRef(null);
 
-    // Set up invisible reCAPTCHA on mount
+    // Clean up any lingering reCAPTCHA verifier if present
     useEffect(() => {
-        try {
-            if (!window.recaptchaVerifier) {
-                window.recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
-                    size: 'invisible',
-                    callback: () => {
-                        console.log('reCAPTCHA verified');
-                    },
-                    'expired-callback': () => {
-                        console.log('reCAPTCHA expired');
-                        setError('reCAPTCHA expired. Please try again.');
-                    }
-                });
-            }
-        } catch (err) {
-            console.error('reCAPTCHA setup error:', err);
-        }
-
         return () => {
             if (window.recaptchaVerifier) {
                 try {
@@ -47,62 +27,26 @@ export default function Signup() {
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
-
         if (!name.trim()) {
             setError('Please enter your name');
             return;
         }
-
+        if (!email.trim()) {
+            setError('Please enter a valid email address');
+            return;
+        }
         if (!phone || phone.length < 10) {
             setError('Enter a valid phone number');
             return;
         }
-
         setLoading(true);
-
         try {
-            const fullPhone = `${countryCode}${phone}`;
-            const appVerifier = window.recaptchaVerifier;
-
-            if (!appVerifier) {
-                setError('reCAPTCHA not loaded. Please refresh the page.');
-                setLoading(false);
-                return;
-            }
-
-            // Send OTP via Firebase Phone Auth (real SMS!)
-            const confirmationResult = await signInWithPhoneNumber(auth, fullPhone, appVerifier);
-
-            // Store confirmation result for verification
-            window.confirmationResult = confirmationResult;
-
-            navigate('/verify-otp', { state: { phone, name, countryCode } });
+            // Send OTP via backend (email based) – include email and phone for future use
+            await sendOTP({ email, phone, name, countryCode });
+            navigate('/verify-otp', { state: { email, phone, name, countryCode } });
         } catch (err) {
-            console.error('Firebase OTP error:', err);
-
-            // Reset reCAPTCHA on error
-            if (window.recaptchaVerifier) {
-                try {
-                    window.recaptchaVerifier.clear();
-                } catch (e) { /* ignore */ }
-                window.recaptchaVerifier = null;
-            }
-            // Recreate it
-            try {
-                window.recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
-                    size: 'invisible'
-                });
-            } catch (e) { /* ignore */ }
-
-            if (err.code === 'auth/invalid-phone-number') {
-                setError('Invalid phone number format. Use country code + number.');
-            } else if (err.code === 'auth/too-many-requests') {
-                setError('Too many attempts. Please try again later.');
-            } else if (err.code === 'auth/quota-exceeded') {
-                setError('SMS quota exceeded. Try again tomorrow.');
-            } else {
-                setError(err.message || 'Failed to send OTP');
-            }
+            console.error('Send OTP error:', err);
+            setError(err.response?.data?.message || 'Failed to send OTP');
         } finally {
             setLoading(false);
         }
@@ -115,7 +59,6 @@ export default function Signup() {
                 <div className="bg-orb bg-orb-2"></div>
                 <div className="bg-orb bg-orb-3"></div>
             </div>
-
             <div className="auth-container">
                 <div className="auth-logo">
                     <div className="logo-icon">
@@ -129,18 +72,15 @@ export default function Signup() {
                     <h1>BlockPay</h1>
                     <p className="auth-subtitle">Create Your Account</p>
                 </div>
-
                 <form className="auth-form" onSubmit={handleSubmit}>
                     <h2>Get Started</h2>
-
                     {error && <div className="error-message">{error}</div>}
-
                     <div className="input-group">
                         <label>Full Name</label>
                         <div className="input-wrapper">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                                <circle cx="12" cy="7" r="4"></circle>
+                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                                <circle cx="12" cy="7" r="4"/>
                             </svg>
                             <input
                                 type="text"
@@ -152,7 +92,22 @@ export default function Signup() {
                             />
                         </div>
                     </div>
-
+                    <div className="input-group">
+                        <label>Email Address</label>
+                        <div className="input-wrapper">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <rect x="4" y="4" width="16" height="12" rx="2" stroke="currentColor" strokeWidth="2" fill="none"/>
+                                <polyline points="22,6 12,13 2,6" />
+                            </svg>
+                            <input
+                                type="email"
+                                placeholder="Enter your email"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                required
+                            />
+                        </div>
+                    </div>
                     <div className="input-group">
                         <label>Phone Number</label>
                         <div className="input-with-action">
@@ -178,17 +133,13 @@ export default function Signup() {
                             </div>
                         </div>
                     </div>
-
                     <button type="submit" className="btn-primary" disabled={loading}>
                         {loading ? <span className="btn-spinner"></span> : 'Send OTP'}
                     </button>
-
                     <p className="auth-link">
                         Already have an account? <Link to="/login">Login</Link>
                     </p>
                 </form>
-
-                {/* Invisible reCAPTCHA container */}
                 <div id="recaptcha-container" ref={recaptchaRef}></div>
             </div>
         </div>

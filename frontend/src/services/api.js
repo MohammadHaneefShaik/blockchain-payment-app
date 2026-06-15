@@ -16,7 +16,7 @@ API.interceptors.request.use((config) => {
 });
 
 // ========== Auth APIs (new OTP + PIN flow) ==========
-export const sendOTP = (phone) => API.post('/auth/send-otp', { phone });
+export const sendOTP = (data) => API.post('/auth/send-otp', data);
 export const verifyOTP = (data) => API.post('/auth/verify-otp', data);
 export const setPin = (data) => API.post('/auth/set-pin', data);
 export const login = (data) => API.post('/auth/login', data);

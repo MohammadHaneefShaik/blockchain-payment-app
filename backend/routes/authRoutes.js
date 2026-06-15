@@ -9,6 +9,8 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { createWallet, fundNewUser } = require('../utils/blockchain');
 const Notification = require('../models/Notification');
+const { sendEmail } = require('../utils/mailer');
+const crypto = require('crypto');
 const router = express.Router();
 
 // In-memory OTP store (use Redis in production)
@@ -20,26 +22,33 @@ const otpStore = new Map();
  */
 router.post('/send-otp', async (req, res) => {
     try {
-        const { phone } = req.body;
+        const { email, name, phone } = req.body;
 
-        if (!phone) {
-            return res.status(400).json({ message: 'Phone number is required' });
+        if (!email) {
+            return res.status(400).json({ message: 'Email is required' });
         }
 
-        // Generate OTP (demo mode: always 123456)
-        // In production, integrate Twilio/Firebase here
-        const otp = '123456';
-        otpStore.set(phone, {
+        // Generate OTP (dynamic, using crypto.randomBytes for compatibility)
+        const otp = (function(){
+            const buf = crypto.randomBytes(3); // 24 bits
+            const num = buf.readUIntBE(0,3) % 900000 + 100000; // 100000-999999
+            return num.toString();
+        })();
+        otpStore.set(email, {
             otp,
-            expiresAt: Date.now() + 5 * 60 * 1000 // 5 minutes
+            expiresAt: Date.now() + 10 * 60 * 1000 // 10 minutes
         });
+
+        // Send OTP via email to the provided address
+        await sendEmail(email, 'BlockPay OTP', `<p>Your OTP is: ${otp}</p>`);
+
+        console.log(`📧 OTP for ${email}: ${otp}`);
 
         console.log(`📱 OTP for ${phone}: ${otp}`);
 
         res.json({
             message: 'OTP sent successfully',
-            // Remove this in production — only for demo
-            demo_otp: otp
+            ...(process.env.OTP_DEMO_MODE === 'true' ? { demo_otp: otp } : {})
         });
     } catch (err) {
         console.error('Send OTP error:', err);
@@ -53,50 +62,39 @@ router.post('/send-otp', async (req, res) => {
  */
 router.post('/verify-otp', async (req, res) => {
     try {
-        const { phone, otp, firebaseUid } = req.body;
+        const { email, otp } = req.body;
 
-        if (!phone) {
-            return res.status(400).json({ message: 'Phone is required' });
+        if (!email || !otp) {
+            return res.status(400).json({ message: 'Email and OTP are required' });
         }
 
-        // Firebase-verified OTP (real SMS)
-        if (firebaseUid && otp === 'firebase-verified') {
-            console.log(`✅ Firebase verified phone: ${phone}, UID: ${firebaseUid}`);
-        } else {
-            // Fallback: legacy OTP verification
-            if (!otp) {
-                return res.status(400).json({ message: 'OTP is required' });
-            }
+        const stored = otpStore.get(email);
 
-            const stored = otpStore.get(phone);
-
-            if (!stored) {
-                return res.status(400).json({ message: 'No OTP found. Please request a new one.' });
-            }
-
-            if (Date.now() > stored.expiresAt) {
-                otpStore.delete(phone);
-                return res.status(400).json({ message: 'OTP expired. Please request a new one.' });
-            }
-
-            if (stored.otp !== otp) {
-                return res.status(400).json({ message: 'Invalid OTP' });
-            }
-
-            // OTP verified — clean up
-            otpStore.delete(phone);
+        if (!stored) {
+            return res.status(400).json({ message: 'No OTP found. Please request a new one.' });
         }
 
-        // Check if user already exists (returning user)
-        const existingUser = await User.findOne({ phone });
+        if (Date.now() > stored.expiresAt) {
+            otpStore.delete(email);
+            return res.status(400).json({ message: 'OTP expired. Please request a new one.' });
+        }
+
+        if (stored.otp !== otp) {
+            return res.status(400).json({ message: 'Invalid OTP' });
+        }
+
+        // OTP verified — clean up
+        otpStore.delete(email);
+
+        // Check if user already exists
+        const existingUser = await User.findOne({ email });
 
         if (existingUser) {
-            // Existing user — mark verified and return JWT
             existingUser.isVerified = true;
             await existingUser.save();
 
             const token = jwt.sign(
-                { id: existingUser._id, phone: existingUser.phone },
+                { id: existingUser._id, email: existingUser.email },
                 process.env.JWT_SECRET,
                 { expiresIn: '7d' }
             );
@@ -108,7 +106,7 @@ router.post('/verify-otp', async (req, res) => {
                 user: {
                     id: existingUser._id,
                     name: existingUser.name,
-                    phone: existingUser.phone,
+                    email: existingUser.email,
                     walletAddress: existingUser.walletAddress,
                     isVerified: true
                 }
@@ -117,7 +115,7 @@ router.post('/verify-otp', async (req, res) => {
 
         // New user — return temp token for PIN setup
         const tempToken = jwt.sign(
-            { phone, verified: true },
+            { email, verified: true },
             process.env.JWT_SECRET,
             { expiresIn: '15m' }
         );
@@ -139,7 +137,7 @@ router.post('/verify-otp', async (req, res) => {
  */
 router.post('/set-pin', async (req, res) => {
     try {
-        const { name, phone, pin, tempToken, firebaseVerified, firebaseUid } = req.body;
+        const { name, phone, email, pin, tempToken, firebaseVerified, firebaseUid } = req.body;
 
         // Validate inputs
         if (!name || !phone || !pin) {
@@ -162,7 +160,8 @@ router.post('/set-pin', async (req, res) => {
             } catch (err) {
                 return res.status(401).json({ message: 'Session expired. Please verify OTP again.' });
             }
-            if (decoded.phone !== phone || !decoded.verified) {
+            // Updated check: compare email and verification flag from token
+            if (decoded.email !== email || !decoded.verified) {
                 return res.status(401).json({ message: 'Invalid session. Please verify OTP again.' });
             }
         } else {
@@ -170,7 +169,8 @@ router.post('/set-pin', async (req, res) => {
         }
 
         // Check if user already exists
-        const existing = await User.findOne({ phone });
+        // Check if user already exists by phone or email
+        const existing = await User.findOne({ $or: [{ phone }, { email }] });
         if (existing) {
             return res.status(400).json({ message: 'Account already exists. Please login.' });
         }
@@ -187,6 +187,7 @@ router.post('/set-pin', async (req, res) => {
         const user = new User({
             name,
             phone,
+            email,
             pin,
             walletAddress: address,
             encryptedPrivateKey,

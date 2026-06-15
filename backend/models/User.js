@@ -17,6 +17,15 @@ const UserSchema = new mongoose.Schema({
         index: true
     },
 
+    // Email address for OTP verification
+    email: {
+        type: String,
+        required: [true, 'Email is required'],
+        unique: true,
+        trim: true,
+        lowercase: true
+    },
+
     // 4-digit PIN (bcrypt hashed) — replaces password
     pin: {
         type: String,
